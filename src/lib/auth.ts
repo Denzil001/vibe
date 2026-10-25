@@ -43,6 +43,65 @@ export async function getCurrentUser(): Promise<SafeUser | null> {
     const payload = verifyToken(sessionToken);
     if (!payload?.userId) return null;
 
+    // First attempt to load profile from Supabase
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const { getSupabaseAdmin } = await import('./supabase/admin');
+        const s = getSupabaseAdmin();
+        const { data: profile } = await s
+          .from('profiles')
+          .select('*')
+          .eq('id', payload.userId)
+          .maybeSingle();
+
+        if (profile) {
+          let email = '';
+          try {
+            const { data: authUser } = await s.auth.admin.getUserById(payload.userId);
+            if (authUser?.user?.email) {
+              email = authUser.user.email;
+            }
+          } catch {
+            // non-fatal
+          }
+
+          const isBanned = !!profile.chats_banned_at;
+          const avatarUrl = profile.avatar?.startsWith('http') 
+            ? profile.avatar 
+            : `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(profile.handle || profile.id)}`;
+
+          const safeUser: SafeUser = {
+            id: profile.id,
+            email,
+            username: profile.handle,
+            displayName: profile.display_name || profile.handle,
+            avatarUrl,
+            bio: profile.bio || '',
+            interests: profile.interests || [],
+            skillsToShare: [],
+            skillsToLearn: [],
+            learningGoals: [],
+            conversationTopics: [profile.conversation_goal || 'Casual chat'],
+            languages: [profile.language || 'en'],
+            discoveryOptIn: true,
+            profileVisibility: 'journey_only',
+            role: (payload.role as any) || 'passenger',
+            points: profile.reputation_points ?? 0,
+            baseScore: profile.reputation_points ?? 0,
+            reputationScore: profile.reputation_points ?? 0,
+            isRestricted: isBanned,
+            restrictionReason: profile.ban_reason || undefined,
+            badges: ['first_profile'],
+            createdAt: profile.created_at,
+            updatedAt: profile.updated_at,
+          };
+          return safeUser;
+        }
+      } catch (err) {
+        // Fall back to local DB if Supabase query fails
+      }
+    }
+
     db.checkAndExpireRestrictions();
     const user = db.getUserById(payload.userId);
     if (!user) return null;

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
@@ -9,514 +9,678 @@ import {
   MessageSquare, 
   X, 
   ShieldAlert, 
-  Ban, 
-  ThumbsUp, 
-  ThumbsDown, 
   CheckCircle2, 
   AlertCircle, 
-  Scale, 
-  EyeOff, 
   ArrowRight,
-  User as UserIcon,
   Flame,
-  Info,
-  Gamepad2
+  Gamepad2,
+  RefreshCw,
+  Heart,
+  Clock,
+  UserCheck,
+  UserPlus,
+  Send,
+  Users
 } from 'lucide-react';
-import { MatchRecommendation, SafeUser, Journey } from '@/types';
+
+interface MutualPromptData {
+  targetUserId: string;
+  targetUser: any;
+  roomId: string;
+}
 
 export default function DiscoverPage() {
   const router = useRouter();
-  const [matches, setMatches] = useState<MatchRecommendation[]>([]);
-  const [journey, setJourney] = useState<Journey | null>(null);
-  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [journey, setJourney] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [discoveryDisabled, setDiscoveryDisabled] = useState(false);
-  const [statusMsg, setStatusMsg] = useState<string | null>(null);
-  const [voteFeedback, setVoteFeedback] = useState<Record<string, { message: string; type: 'success' | 'error' }>>({});
+  const [isBanned, setIsBanned] = useState(false);
 
-  // Modal states for Report and Block
-  const [activeModal, setActiveModal] = useState<{ type: 'report' | 'block'; targetUser: SafeUser } | null>(null);
-  const [reportReason, setReportReason] = useState('');
-  const [reportCategory, setReportCategory] = useState<'harassment' | 'spam' | 'abusive' | 'other'>('harassment');
-  const [isSubmittingAction, setIsSubmittingAction] = useState(false);
+  // 4 Discovery Buckets
+  const [incomingRequests, setIncomingRequests] = useState<any[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<any[]>([]);
+  const [mutualMatches, setMutualMatches] = useState<any[]>([]);
+  const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
 
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/discover').then(res => res.json()),
-      fetch('/api/journey').then(res => res.json()),
-    ])
-      .then(([discoverData, journeyData]) => {
-        if (discoverData.discoveryDisabled) {
-          setDiscoveryDisabled(true);
+  // Action loaders
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+
+  // Prompt Modal when match is accepted from both ends
+  const [promptMatch, setPromptMatch] = useState<MutualPromptData | null>(null);
+
+  // Track known mutual matches to auto-pop prompt when accepted by the other party without reload
+  const seenMutualIdsRef = useRef<Set<string>>(new Set());
+  const isInitialLoadRef = useRef(true);
+
+  const fetchDiscoveryData = async () => {
+    try {
+      const discRes = await fetch('/api/discover');
+      if (discRes.status === 403) {
+        setIsBanned(true);
+        return;
+      }
+
+      if (discRes.ok) {
+        const data = await discRes.json();
+        const incoming = data.incomingRequests || [];
+        const outgoing = data.outgoingRequests || [];
+        const mutual = data.mutualMatches || [];
+        const matches = data.matches || [];
+
+        setIncomingRequests(incoming);
+        setOutgoingRequests(outgoing);
+        setMutualMatches(mutual);
+        setAiSuggestions(matches);
+        if (data.journey) {
+          setJourney(data.journey);
+        }
+
+        // Live detection: if an outgoing or incoming request was accepted on the other end,
+        // auto-trigger the mutual prompt without needing a manual page reload!
+        if (isInitialLoadRef.current) {
+          mutual.forEach((m: any) => {
+            const key = m.matchId || m.targetUserId;
+            if (key) seenMutualIdsRef.current.add(key);
+          });
+          isInitialLoadRef.current = false;
         } else {
-          setMatches(discoverData.matches || []);
+          for (const m of mutual) {
+            const key = m.matchId || m.targetUserId;
+            if (key && !seenMutualIdsRef.current.has(key)) {
+              seenMutualIdsRef.current.add(key);
+              setPromptMatch({
+                targetUserId: m.targetUserId,
+                targetUser: m.user,
+                roomId: m.roomId,
+              });
+              break;
+            }
+          }
         }
-        if (journeyData.journey) {
-          setJourney(journeyData.journey);
-        }
-      })
-      .catch(console.error)
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  const handleDismiss = (userId: string) => {
-    setDismissedIds(prev => [...prev, userId]);
-  };
-
-  const handleConnect = async (targetUserId: string) => {
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ recipientId: targetUserId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      router.push(`/chat/${data.conversation.id}`);
-    } catch (err: any) {
-      alert(err.message || 'Failed to start conversation.');
-    }
-  };
-
-  const handleVote = async (targetUserId: string, voteType: 'positive' | 'negative') => {
-    if (!journey) {
-      setVoteFeedback(prev => ({
-        ...prev,
-        [targetUserId]: {
-          message: 'Please set up an active train journey first to submit feedback.',
-          type: 'error',
-        },
-      }));
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/reputation/vote', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetUserId,
-          journeyId: journey.id,
-          voteType,
-        }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setVoteFeedback(prev => ({
-          ...prev,
-          [targetUserId]: {
-            message: data.error || 'Feedback could not be recorded.',
-            type: 'error',
-          },
-        }));
-      } else {
-        setVoteFeedback(prev => ({
-          ...prev,
-          [targetUserId]: {
-            message: data.message,
-            type: 'success',
-          },
-        }));
       }
     } catch (err) {
-      setVoteFeedback(prev => ({
-        ...prev,
-        [targetUserId]: {
-          message: 'Network error submitting feedback.',
-          type: 'error',
-        },
-      }));
+      console.error('Discover fetch error:', err);
     }
   };
 
-  const handleConfirmBlock = async () => {
-    if (!activeModal || activeModal.type !== 'block') return;
-    setIsSubmittingAction(true);
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const meRes = await fetch('/api/auth/me');
+        const meData = await meRes.json();
+        if (!meData?.user) {
+          router.push('/auth');
+          return;
+        }
+        setCurrentUser(meData.user);
+
+        if (meData.user.isRestricted) {
+          setIsBanned(true);
+          setIsLoading(false);
+          return;
+        }
+
+        await fetchDiscoveryData();
+      } catch (err) {
+        console.error('Discover load error:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadData();
+  }, [router]);
+
+  // Periodic polling every 2.5 seconds: ensures the requested end updates instantly when the other party accepts
+  useEffect(() => {
+    if (isBanned) return;
+    const interval = setInterval(() => {
+      fetchDiscoveryData();
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [isBanned]);
+
+  // Respond to candidate / request
+  const handleRespond = async (targetUserId: string, targetUser: any, accept: boolean) => {
+    setActionLoading(prev => ({ ...prev, [targetUserId]: true }));
 
     try {
-      const res = await fetch('/api/blocks', {
+      const res = await fetch('/api/matches/respond', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ blockedUserId: activeModal.targetUser.id }),
+        body: JSON.stringify({ targetUserId, accept }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
 
-      setMatches(prev => prev.filter(m => m.user.id !== activeModal.targetUser.id));
-      setActiveModal(null);
-      setStatusMsg(`Blocked @${activeModal.targetUser.username || activeModal.targetUser.displayName}. Mutual discovery and communication disabled.`);
-    } catch (err: any) {
-      alert(err.message || 'Failed to block user.');
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Failed to process match response.');
+        return;
+      }
+
+      // If accepted from both ends, trigger prompt to continue or decline
+      if (accept && data.status === 'mutual_accepted' && data.roomId) {
+        setPromptMatch({
+          targetUserId,
+          targetUser: targetUser || { id: targetUserId, displayName: 'Passenger', username: 'passenger' },
+          roomId: data.roomId,
+        });
+      }
+
+      // Refresh data
+      await fetchDiscoveryData();
+    } catch {
+      alert('Error communicating with matching server.');
     } finally {
-      setIsSubmittingAction(false);
+      setActionLoading(prev => ({ ...prev, [targetUserId]: false }));
     }
   };
 
-  const handleConfirmReport = async () => {
-    if (!activeModal || activeModal.type !== 'report') return;
-    setIsSubmittingAction(true);
-
-    try {
-      const res = await fetch('/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reportedUserId: activeModal.targetUser.id,
-          category: reportCategory,
-          reason: reportReason,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setMatches(prev => prev.filter(m => m.user.id !== activeModal.targetUser.id));
-      setActiveModal(null);
-      setReportReason('');
-      setStatusMsg(`Report submitted for moderator review. @${activeModal.targetUser.username || activeModal.targetUser.displayName} has also been blocked.`);
-    } catch (err: any) {
-      alert(err.message || 'Failed to submit report.');
-    } finally {
-      setIsSubmittingAction(false);
-    }
+  // Decline from prompt modal
+  const handlePromptDecline = async () => {
+    if (!promptMatch) return;
+    const targetUserId = promptMatch.targetUserId;
+    setPromptMatch(null);
+    await handleRespond(targetUserId, null, false);
   };
 
-  const visibleMatches = matches.filter(m => !dismissedIds.includes(m.user.id));
+  // Continue to chat from prompt modal
+  const handlePromptContinue = () => {
+    if (!promptMatch) return;
+    const roomId = promptMatch.roomId;
+    setPromptMatch(null);
+    router.push(`/chat/${roomId}`);
+  };
 
   if (isLoading) {
     return (
-      <div className="py-24 flex justify-center items-center flex-1 bg-[#090D16]">
-        <div className="flex items-center gap-2 font-mono text-xs text-emerald-400 animate-pulse">
-          <Train className="w-4 h-4 animate-bounce" />
-          <span>FINDING PASSENGER MATCHES ON YOUR ROUTE...</span>
+      <div className="min-h-screen bg-[#0B0F17] flex items-center justify-center text-slate-400">
+        <RefreshCw className="w-8 h-8 animate-spin text-amber-400" />
+      </div>
+    );
+  }
+
+  if (isBanned) {
+    return (
+      <div className="min-h-screen bg-[#0B0F17] text-slate-100 py-12 px-4 flex flex-col items-center justify-center">
+        <div className="max-w-md w-full rounded-3xl bg-rose-950/40 border border-rose-500/40 p-8 text-center space-y-4">
+          <ShieldAlert className="w-12 h-12 text-rose-400 mx-auto" />
+          <h1 className="text-xl font-bold text-white">Discovery Restricted</h1>
+          <p className="text-xs text-rose-300 leading-relaxed">
+            Your account is permanently restricted from passenger discovery and matchmaking because your reputation score fell strictly below -50.
+          </p>
+          <div className="pt-4">
+            <Link
+              href="/carriage"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-all"
+            >
+              <ArrowRight className="w-4 h-4 rotate-180" />
+              <span>Return to Carriage</span>
+            </Link>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="py-12 bg-[#090D16] bg-dark-grid-pattern text-slate-100 flex-1 min-h-screen">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+    <div className="min-h-screen bg-[#0B0F17] text-slate-100 py-10 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto space-y-8">
         
         {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="w-5 h-5 text-emerald-400" />
-              <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-                Passenger Discovery
-              </h1>
+            <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-400 uppercase tracking-wider mb-1">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>AI-Assisted Passenger Discovery</span>
             </div>
-            <p className="text-xs sm:text-sm font-mono text-slate-400">
-              Voluntary match suggestions based on shared interests, complementary learning goals, and journey context
+            <h1 className="text-2xl sm:text-3xl font-black text-white">
+              Coach B Passenger Matching
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">
+              {journey?.name || 'Midnight Hackathon Express'} • Dual-Consent Private Compartments
             </p>
           </div>
 
-          <Link
-            href="/journey"
-            className="text-xs font-mono font-bold uppercase tracking-wider px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-emerald-400 hover:bg-slate-700 transition-colors"
-          >
-            Adjust Train Journey
-          </Link>
-        </div>
-
-        {statusMsg && (
-          <div className="p-4 bg-emerald-950/40 border border-emerald-500/50 rounded-xl text-emerald-400 text-xs sm:text-sm font-mono flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-            <span>{statusMsg}</span>
-          </div>
-        )}
-
-        {/* Mandatory Transparency Notice */}
-        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 text-xs text-slate-400 flex items-start gap-3">
-          <Info className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-          <div>
-            <strong className="text-white">Explainable Matching & Journey Safety: </strong>
-            Scores are calculated transparently: same train (+30 pts), skill learning synergy (+25 pts), shared interests (+25 pts), and languages (+20 pts). Matching does not establish identity or legal safety. Follow community rules and never share exact seat numbers.
+          <div className="flex items-center gap-2">
+            <Link
+              href="/carriage"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 hover:text-white transition-all"
+            >
+              <span>Carriage</span>
+            </Link>
+            <Link
+              href="/lounge"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Common Lounge</span>
+            </Link>
           </div>
         </div>
 
-        {discoveryDisabled ? (
-          <div className="bento-dark-card p-8 text-center space-y-4">
-            <EyeOff className="w-10 h-10 text-slate-500 mx-auto" />
-            <h3 className="text-lg font-bold text-white">Discovery is currently turned off</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              You have chosen not to appear in passenger discovery. To view fellow passengers on your route, enable discovery in your profile settings.
-            </p>
-            <Link
-              href="/profile"
-              className="inline-flex items-center px-5 py-2.5 rounded-xl bg-emerald-400 text-navy-950 font-mono font-bold text-xs uppercase tracking-wider"
-            >
-              Update Profile Privacy
-            </Link>
-          </div>
-        ) : visibleMatches.length === 0 ? (
-          <div className="bento-dark-card p-10 text-center space-y-4">
-            <div className="w-12 h-12 rounded-2xl bg-slate-900 text-slate-400 flex items-center justify-center mx-auto border border-slate-800">
-              <Train className="w-6 h-6 text-emerald-400" />
+        {/* 1. MUTUAL MATCHES SECTION (Accepted from both ends) */}
+        {mutualMatches.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-black text-emerald-400 uppercase tracking-wide">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>Mutual Matches Ready for Chat ({mutualMatches.length})</span>
             </div>
-            <h3 className="text-lg font-bold text-white">No matching passengers found</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              We did not find other opted-in passengers on this exact train route with overlapping interests. Try adding more skills or broader conversational topics to your profile!
-            </p>
-            <Link
-              href="/profile"
-              className="inline-flex items-center gap-2 text-xs font-mono font-bold uppercase tracking-wider px-4 py-2 rounded-xl bg-emerald-400 text-navy-950 hover:bg-emerald-300 transition-colors"
-            >
-              Edit Profile Interests
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {visibleMatches.map(match => {
-              const feedback = voteFeedback[match.user.id];
 
-              return (
-                <div
-                  key={match.user.id}
-                  className="bento-dark-card p-6 border-slate-800 hover:border-emerald-500/40 transition-all space-y-4"
-                >
-                  <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-                    <div className="flex items-start gap-3.5">
-                      <img
-                        src={match.user.avatarUrl}
-                        alt={match.user.displayName}
-                        className="w-12 h-12 rounded-2xl object-cover border border-emerald-400/40 shrink-0"
-                      />
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="text-base font-bold text-white">
-                            {match.user.displayName}
-                          </h3>
-                          <span className="text-xs font-mono text-emerald-400">
-                            @{match.user.username || 'passenger'}
-                          </span>
-                          {match.sameTrain && (
-                            <span className="sys-tag text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                              TRAIN {match.journey?.trainNumber}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {mutualMatches.map(m => {
+                const targetUser = m.user;
+                const isLoadingAction = actionLoading[m.targetUserId];
+
+                return (
+                  <div
+                    key={m.matchId || m.targetUserId}
+                    className="rounded-3xl bg-slate-900/90 border-2 border-emerald-500/40 p-5 space-y-4 shadow-xl relative overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={targetUser?.avatarUrl || 'https://api.dicebear.com/7.x/bottts/svg?seed=user'}
+                          alt={targetUser?.displayName}
+                          className="w-12 h-12 rounded-2xl object-cover bg-slate-950 border border-emerald-400/60 shrink-0"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-white">@{targetUser?.username}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 font-bold border border-emerald-500/40">
+                              Mutual Match
                             </span>
-                          )}
-                          <span className="sys-tag text-[9px] bg-slate-800 text-slate-300">
-                            {match.score}% MATCH
+                          </div>
+                          <span className="text-xs text-slate-400 block mt-0.5">
+                            {targetUser?.displayName} • {targetUser?.conversationTopics?.[0] || 'Casual fun'}
                           </span>
                         </div>
-
-                        {match.user.bio && (
-                          <p className="text-xs text-slate-400 mt-1 line-clamp-2">
-                            {match.user.bio}
-                          </p>
-                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5 self-end sm:self-start">
+                    <p className="text-xs text-slate-300">
+                      Both of you have accepted each other&apos;s connection request. Private chatroom is ready.
+                    </p>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
                       <button
-                        onClick={() => handleDismiss(match.user.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                        title="Dismiss suggestion"
+                        type="button"
+                        disabled={isLoadingAction}
+                        onClick={() => handleRespond(m.targetUserId, targetUser, false)}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-400 hover:text-rose-400 font-bold text-xs transition-all"
                       >
-                        <X className="w-4 h-4" />
+                        Decline
                       </button>
                       <button
-                        onClick={() => setActiveModal({ type: 'block', targetUser: match.user })}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        title="Block user"
-                      >
-                        <Ban className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => setActiveModal({ type: 'report', targetUser: match.user })}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors"
-                        title="Report user"
-                      >
-                        <ShieldAlert className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Why Suggested */}
-                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-300">
-                    <strong className="text-emerald-400 font-mono">Why Suggested: </strong>
-                    {match.explanation}
-                  </div>
-
-                  {/* Skills & Shared Tags */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {match.sharedInterests.map((interest, idx) => (
-                      <span key={idx} className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800">
-                        {interest}
-                      </span>
-                    ))}
-                    {match.sharedLanguages.map((lang, idx) => (
-                      <span key={idx} className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        {lang}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Feedback Action Buttons (Reputation Voting + Connect) */}
-                  <div className="pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider mr-1">
-                        Journey Feedback:
-                      </span>
-                      <button
-                        onClick={() => handleVote(match.user.id, 'positive')}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-emerald-400 border border-emerald-500/30 text-xs font-mono font-bold transition-all"
-                        title="Liked interacting (+2 points)"
-                      >
-                        <ThumbsUp className="w-3.5 h-3.5" />
-                        <span>Liked (+2)</span>
-                      </button>
-                      <button
-                        onClick={() => handleVote(match.user.id, 'negative')}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-slate-700 text-xs font-mono font-bold transition-all"
-                        title="Not a good interaction (-2 points)"
-                      >
-                        <ThumbsDown className="w-3.5 h-3.5" />
-                        <span>Not for me (-2)</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Link
-                        href={`/play?invite=${match.user.username || match.user.id}`}
-                        className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-emerald-500/50 text-slate-200 hover:text-white font-mono font-bold text-xs uppercase flex items-center gap-1.5 transition-all"
-                      >
-                        <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Play Together</span>
-                      </Link>
-
-                      <button
-                        onClick={() => handleConnect(match.user.id)}
-                        className="px-4 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-navy-950 font-mono font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-emerald-500/20 transition-all"
+                        type="button"
+                        onClick={() => {
+                          setPromptMatch({
+                            targetUserId: m.targetUserId,
+                            targetUser,
+                            roomId: m.roomId,
+                          });
+                        }}
+                        className="flex-[2] py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Start Chat</span>
+                        <span>Continue to Chat</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-                  {/* Feedback Status Alert */}
-                  {feedback && (
-                    <div className={`p-3 rounded-xl text-xs font-mono flex items-center gap-2 animate-in fade-in duration-150 ${
-                      feedback.type === 'success' 
-                        ? 'bg-emerald-950/40 border border-emerald-500/40 text-emerald-400' 
-                        : 'bg-rose-950/40 border border-rose-500/40 text-rose-400'
-                    }`}>
-                      {feedback.type === 'success' ? (
-                        <CheckCircle2 className="w-4 h-4 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 shrink-0" />
-                      )}
-                      <span>{feedback.message}</span>
+        {/* 2. PENDING INCOMING REQUESTS SECTION */}
+        {incomingRequests.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-black text-amber-400 uppercase tracking-wide">
+              <UserCheck className="w-4 h-4 text-amber-400" />
+              <span>Pending Incoming Requests ({incomingRequests.length})</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {incomingRequests.map(req => {
+                const targetUser = req.user;
+                const isLoadingAction = actionLoading[req.targetUserId];
+
+                return (
+                  <div
+                    key={req.matchId || req.targetUserId}
+                    className="rounded-3xl bg-slate-900/90 border border-amber-500/40 p-5 space-y-4 shadow-xl"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={targetUser?.avatarUrl || 'https://api.dicebear.com/7.x/bottts/svg?seed=user'}
+                          alt={targetUser?.displayName}
+                          className="w-12 h-12 rounded-2xl object-cover bg-slate-950 border border-amber-400/50 shrink-0"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-white">@{targetUser?.username}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 font-bold border border-amber-500/30">
+                              Incoming
+                            </span>
+                          </div>
+                          <span className="text-xs text-slate-400 block mt-0.5">
+                            {targetUser?.displayName}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
 
-        {/* Block Confirmation Modal */}
-        {activeModal && activeModal.type === 'block' && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bento-dark-card max-w-md w-full p-6 bg-slate-900 border-slate-700 shadow-2xl space-y-4">
-              <div className="flex items-center gap-2.5 text-rose-400">
-                <Ban className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">Block @{activeModal.targetUser.username || activeModal.targetUser.displayName}?</h3>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Blocking is mutual and immediate. Neither you nor this passenger will be able to see each other in discovery feeds or exchange messages. They will receive no notification of this action.
-              </p>
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  disabled={isSubmittingAction}
-                  className="px-4 py-2 rounded-xl text-xs font-mono text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmBlock}
-                  disabled={isSubmittingAction}
-                  className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-mono text-xs font-bold uppercase"
-                >
-                  Confirm Block
-                </button>
-              </div>
+                    <div className="space-y-1.5 text-xs text-slate-300">
+                      <p>
+                        Goal: <span className="text-amber-300 font-medium">{targetUser?.conversationTopics?.[0] || 'Casual fun'}</span>
+                      </p>
+                      {targetUser?.interests && targetUser.interests.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {targetUser.interests.map((tag: string) => (
+                            <span key={tag} className="text-[10px] px-2 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        disabled={isLoadingAction}
+                        onClick={() => handleRespond(req.targetUserId, targetUser, false)}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-400 hover:text-white font-bold text-xs transition-all"
+                      >
+                        Decline
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isLoadingAction}
+                        onClick={() => handleRespond(req.targetUserId, targetUser, true)}
+                        className="flex-[2] py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
+                      >
+                        {isLoadingAction ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Accept Request</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Report Modal */}
-        {activeModal && activeModal.type === 'report' && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bento-dark-card max-w-md w-full p-6 bg-slate-900 border-slate-700 shadow-2xl space-y-4">
-              <div className="flex items-center gap-2.5 text-amber-400">
-                <ShieldAlert className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">Report @{activeModal.targetUser.username || activeModal.targetUser.displayName}</h3>
-              </div>
-              <p className="text-xs text-slate-400">
-                Reports are audited by human safety moderators. Submitting a report also blocks the user automatically.
-              </p>
+        {/* 3. PENDING OUTGOING REQUESTS SECTION */}
+        {outgoingRequests.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm font-black text-slate-400 uppercase tracking-wide">
+              <Clock className="w-4 h-4 text-slate-400" />
+              <span>Pending Outgoing Requests ({outgoingRequests.length})</span>
+            </div>
 
-              <div>
-                <label className="block text-xs font-mono uppercase text-slate-400 mb-1">
-                  Category
-                </label>
-                <select
-                  value={reportCategory}
-                  onChange={e => setReportCategory(e.target.value as any)}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white"
-                >
-                  <option value="harassment">Harassment or unwelcome contact</option>
-                  <option value="spam">Commercial spam or ticket scalping</option>
-                  <option value="abusive">Abusive or threatening language</option>
-                  <option value="other">Other policy violation</option>
-                </select>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {outgoingRequests.map(req => {
+                const targetUser = req.user;
+                const isLoadingAction = actionLoading[req.targetUserId];
 
-              <div>
-                <label className="block text-xs font-mono uppercase text-slate-400 mb-1">
-                  Details
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  value={reportReason}
-                  onChange={e => setReportReason(e.target.value)}
-                  placeholder="Describe what occurred during your journey interaction..."
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-600"
-                />
-              </div>
+                return (
+                  <div
+                    key={req.matchId || req.targetUserId}
+                    className="rounded-3xl bg-slate-900/70 border border-slate-800 p-5 space-y-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={targetUser?.avatarUrl || 'https://api.dicebear.com/7.x/bottts/svg?seed=user'}
+                          alt={targetUser?.displayName}
+                          className="w-10 h-10 rounded-2xl object-cover bg-slate-950 border border-slate-700 shrink-0"
+                        />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-white">@{targetUser?.username}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+                              Waiting
+                            </span>
+                          </div>
+                          <span className="text-xs text-slate-400 block mt-0.5">
+                            {targetUser?.displayName}
+                          </span>
+                        </div>
+                      </div>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setActiveModal(null)}
-                  disabled={isSubmittingAction}
-                  className="px-4 py-2 rounded-xl text-xs font-mono text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmReport}
-                  disabled={isSubmittingAction || !reportReason.trim()}
-                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-navy-950 font-mono text-xs font-bold uppercase"
-                >
-                  Submit Report
-                </button>
-              </div>
+                      <button
+                        type="button"
+                        disabled={isLoadingAction}
+                        onClick={() => handleRespond(req.targetUserId, targetUser, false)}
+                        className="text-xs px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-slate-400 flex items-center gap-1.5 font-medium">
+                      <Clock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Invitation sent. Waiting for @{targetUser?.username} to accept.</span>
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
+        {/* 4. AI AGENT SUGGESTED PASSENGERS SECTION */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-black text-white uppercase tracking-wide">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span>Suggested by AI Agent ({aiSuggestions.length})</span>
+            </div>
+            <span className="text-xs text-slate-500 font-mono">
+              Powered by Gemini
+            </span>
+          </div>
+
+          {aiSuggestions.length === 0 ? (
+            <div className="rounded-3xl bg-slate-900/60 border border-slate-800 p-10 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto mb-2">
+                <Train className="w-6 h-6" />
+              </div>
+              <h2 className="text-base font-bold text-white">No New Candidates</h2>
+              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                You have reviewed all active passengers in Coach B for this journey. Check back as new passengers scan their food QR vouchers, or meet everyone in the Common Lounge!
+              </p>
+              <div className="pt-2">
+                <Link
+                  href="/lounge"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-md"
+                >
+                  <span>Enter Common Lounge</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {aiSuggestions.map(match => {
+                const targetId = match.targetUserId || match.user?.id;
+                const isLoadingAction = actionLoading[targetId];
+                const user = match.user;
+
+                return (
+                  <div
+                    key={targetId}
+                    className="rounded-3xl bg-slate-900/90 border border-slate-800 p-6 flex flex-col justify-between space-y-4 shadow-xl backdrop-blur-sm relative overflow-hidden group hover:border-slate-700 transition-all"
+                  >
+                    <div className="space-y-3.5">
+                      {/* Passenger Profile Top */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <img
+                            src={user?.avatarUrl || 'https://api.dicebear.com/7.x/bottts/svg?seed=user'}
+                            alt={user?.displayName || 'Passenger'}
+                            className="w-14 h-14 rounded-2xl object-cover bg-slate-950 border border-amber-400/40 shadow-md shrink-0"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-base font-black text-white">
+                                @{user?.username}
+                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-bold">
+                                Coach B
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-400 block mt-0.5">
+                              Goal: <span className="text-amber-300 font-semibold">{user?.conversationTopics?.[0] || 'Casual fun'}</span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {match.score && (
+                          <div className="px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono font-bold flex items-center gap-1">
+                            <Flame className="w-3.5 h-3.5 text-amber-400" />
+                            <span>{match.score}%</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Shared Interests */}
+                      {user?.interests && user.interests.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {user.interests.map((tag: string) => (
+                            <span
+                              key={tag}
+                              className={`text-[11px] px-2.5 py-1 rounded-lg font-medium ${
+                                (match.sharedInterests || []).includes(tag)
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold'
+                                  : 'bg-slate-950 text-slate-400 border border-slate-800'
+                              }`}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* AI Grounded Match Reason */}
+                      {match.matchReason && (
+                        <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                            <Sparkles className="w-3 h-3" />
+                            <span>Why AI suggested this match</span>
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {match.matchReason}
+                          </p>
+                          {match.icebreaker && (
+                            <p className="text-[11px] text-slate-400 italic pt-1 border-t border-slate-800/50">
+                              💡 Icebreaker: {match.icebreaker}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions Bar */}
+                    <div className="pt-2 border-t border-slate-800 flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={isLoadingAction}
+                        onClick={() => handleRespond(targetId, user, false)}
+                        className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-400 hover:text-white font-bold text-xs transition-all"
+                      >
+                        Not Now
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isLoadingAction}
+                        onClick={() => handleRespond(targetId, user, true)}
+                        className="flex-[2] py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black text-xs transition-all shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
+                      >
+                        {isLoadingAction ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Heart className="w-3.5 h-3.5 fill-slate-950" />
+                            <span>I&apos;m Interested</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* PROMPT MODAL WHEN REQUEST IS ACCEPTED FROM BOTH ENDS */}
+      {promptMatch && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="max-w-md w-full rounded-3xl bg-slate-900 border-2 border-emerald-500/60 p-6 sm:p-7 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <span>Mutual Match Confirmed!</span>
+              </div>
+              <button
+                onClick={() => setPromptMatch(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-center space-y-3">
+              <img
+                src={promptMatch.targetUser?.avatarUrl || 'https://api.dicebear.com/7.x/bottts/svg?seed=user'}
+                alt={promptMatch.targetUser?.displayName}
+                className="w-16 h-16 rounded-2xl mx-auto object-cover bg-slate-950 border-2 border-emerald-400 shadow-lg"
+              />
+              <div>
+                <h3 className="text-lg font-black text-white">
+                  Continue to Private Chat with @{promptMatch.targetUser?.username}?
+                </h3>
+                <p className="text-xs text-slate-300 mt-1">
+                  Both of you have accepted the connection request. You can enter the private compartment now or decline.
+                </p>
+                <p className="text-[11px] text-slate-400 mt-2 font-mono">
+                  Note: Chat history is cleared automatically when no one is in the chatroom.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handlePromptDecline}
+                className="py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-rose-400 font-bold text-xs transition-all"
+              >
+                No, Decline
+              </button>
+              <button
+                type="button"
+                onClick={handlePromptContinue}
+                className="py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-1.5"
+              >
+                <span>Yes, Continue</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

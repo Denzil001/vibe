@@ -86,7 +86,7 @@ export async function POST(req: Request) {
     }
 
     // Process destination join action
-    let destinationRedirect = '/dashboard';
+    let destinationRedirect = '/carriage';
     if (validation.qrToken.type === 'journey_join' && validation.targetJourney) {
       const tj = validation.targetJourney;
       // Ensure user has an active journey record for this train

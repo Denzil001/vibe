@@ -56,16 +56,16 @@ export const Navbar: React.FC = () => {
 
   const navLinks = currentUser
     ? [
-        { href: '/dashboard', label: 'Dashboard', icon: Compass },
+        { href: '/carriage', label: 'Carriage', icon: Compass },
         { href: '/discover', label: 'Discover', icon: Sparkles },
-        { href: '/journey', label: 'Journey', icon: Train },
+        { href: '/lounge', label: 'Lounge', icon: Users },
         { href: '/play', label: 'Play', icon: Award },
-        { href: '/chat', label: 'Messages', icon: MessageSquare },
         { href: '/safety', label: 'Safety & 139', icon: ShieldCheck },
       ]
     : [
-        { href: '/how-it-works', label: 'How It Works' },
+        { href: '/board', label: 'Board Train' },
         { href: '/play', label: 'Arcade & Games' },
+        { href: '/how-it-works', label: 'How It Works' },
         { href: '/safety', label: 'Safety & 139' },
         { href: '/about', label: 'About VIBE' },
       ];
@@ -75,7 +75,7 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <Link href={currentUser ? '/dashboard' : '/'} className="flex items-center gap-3 group">
+          <Link href={currentUser ? '/carriage' : '/'} className="flex items-center gap-3 group">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center text-navy-950 font-black shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
               <Train className="w-5 h-5 text-navy-950" />
             </div>
@@ -120,12 +120,12 @@ export const Navbar: React.FC = () => {
           <div className="hidden md:flex items-center gap-3">
             {/* Quick QR Onboard Button */}
             <Link
-              href="/join"
+              href="/board"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono font-bold uppercase tracking-wider bg-slate-800/80 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 hover:border-emerald-400 transition-all shadow-sm"
               title="Scan or enter train join QR pass"
             >
               <QrCode className="w-4 h-4 text-emerald-400" />
-              <span>QR Pass</span>
+              <span>Board Train</span>
             </Link>
 
             {currentUser ? (
@@ -257,9 +257,9 @@ export const Navbar: React.FC = () => {
           {/* Mobile Menu Button */}
           <div className="flex md:hidden items-center gap-2">
             <Link
-              href="/join"
+              href="/board"
               className="p-2 rounded-lg bg-slate-800 text-emerald-400 border border-emerald-500/30"
-              title="QR Pass"
+              title="Board Train"
             >
               <QrCode className="w-5 h-5" />
             </Link>
@@ -316,7 +316,7 @@ export const Navbar: React.FC = () => {
           })}
 
           <Link
-            href="/join"
+            href="/board"
             onClick={() => setIsMobileMenuOpen(false)}
             className="flex items-center gap-2.5 px-3.5 py-3 rounded-xl text-sm font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30"
           >

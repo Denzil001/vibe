@@ -72,7 +72,7 @@ export default function AdminModeratorPage() {
         ]);
 
         if (repRes.status === 401 || repRes.status === 403) {
-          router.push('/dashboard');
+          router.push('/carriage');
           return;
         }
 

@@ -74,11 +74,11 @@ export default function LandingPage() {
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
               <Link
-                href="/join"
+                href="/board"
                 className="w-full sm:w-auto px-8 py-4 rounded-xl bg-emerald-500 text-slate-950 font-black text-sm tracking-wide hover:bg-emerald-400 transition-all shadow-xl shadow-emerald-500/20 hover:scale-[1.02] flex items-center justify-center gap-2"
               >
                 <Train className="w-4 h-4" />
-                <span>Find Your VIBE</span>
+                <span>Board Your Train</span>
                 <ArrowRight className="w-4 h-4" />
               </Link>
               
@@ -200,7 +200,7 @@ export default function LandingPage() {
 
               <div className="pt-6 mt-4 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-xs text-emerald-700 font-bold">Wants to teach: Concurrency</span>
-                <Link href="/join" className="text-xs font-bold text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1">
+                <Link href="/board" className="text-xs font-bold text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1">
                   Connect <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
@@ -237,7 +237,7 @@ export default function LandingPage() {
 
               <div className="pt-6 mt-4 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-xs text-emerald-700 font-bold">Wants to learn: Python CLI</span>
-                <Link href="/join" className="text-xs font-bold text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1">
+                <Link href="/board" className="text-xs font-bold text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1">
                   Connect <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
@@ -274,7 +274,7 @@ export default function LandingPage() {
 
               <div className="pt-6 mt-4 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-xs text-emerald-700 font-bold">Inviting: Trivia Duel</span>
-                <Link href="/join" className="text-xs font-bold text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1">
+                <Link href="/board" className="text-xs font-bold text-slate-900 hover:text-emerald-700 inline-flex items-center gap-1">
                   Connect <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
@@ -525,7 +525,7 @@ export default function LandingPage() {
 
           <div className="mt-12 text-center">
             <Link
-              href="/join"
+              href="/board"
               className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-emerald-500 text-slate-950 font-black text-sm hover:bg-emerald-400 transition-colors shadow-lg shadow-emerald-500/20"
             >
               <QrCode className="w-4 h-4" />
@@ -754,7 +754,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              href="/join"
+              href="/board"
               className="w-full sm:w-auto px-8 py-4 rounded-xl bg-emerald-500 text-slate-950 font-black text-sm tracking-wide hover:bg-emerald-400 transition-all shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2"
             >
               <QrCode className="w-4 h-4" />

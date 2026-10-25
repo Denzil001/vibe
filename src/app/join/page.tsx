@@ -245,7 +245,7 @@ function JoinPageContent() {
       } else {
         setJoinSuccess(data);
         setTimeout(() => {
-          router.push(data.redirectUrl || '/dashboard');
+          router.push(data.redirectUrl || '/carriage');
         }, 1800);
       }
     } catch (err) {

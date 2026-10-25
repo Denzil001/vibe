@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Train, Lock, Mail, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { Train, Lock, Mail, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 
 export default function LoginPage() {
@@ -31,32 +31,7 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to sign in.');
       }
 
-      router.push('/dashboard');
-      router.refresh();
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDemoLogin = async (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setError(null);
-    setIsLoading(true);
-
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: demoEmail, password: demoPass }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      router.push(demoEmail.includes('admin') ? '/admin' : '/dashboard');
+      router.push('/carriage');
       router.refresh();
     } catch (err: any) {
       setError(err.message);
@@ -73,10 +48,10 @@ export default function LoginPage() {
             <Train className="w-6 h-6 text-brand-400" />
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-navy-900 tracking-tight">
-            Welcome back to VIBE
+            Welcome to VIBE
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Sign in to check your passenger connections and communities
+            Sign in to check your passenger connections and journey
           </p>
         </div>
 
@@ -99,7 +74,7 @@ export default function LoginPage() {
                   required
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="aarav@example.com"
+                  placeholder="passenger@example.com"
                   className="w-full pl-10 pr-4 py-2 text-sm rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
                 />
               </div>
@@ -131,53 +106,12 @@ export default function LoginPage() {
               <ArrowRight className="w-4 h-4 ml-1" />
             </Button>
           </form>
-
-          {/* Quick Demo Accounts for Seamless Evaluation */}
-          <div className="mt-6 pt-6 border-t border-slate-200">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-3 text-center">
-              Quick Demo Accounts (1-Click)
-            </span>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('aarav@example.com', 'password123')}
-                className="p-2 text-left rounded-lg bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 transition-colors"
-              >
-                <span className="font-bold text-navy-900 block truncate">Aarav (Tech)</span>
-                <span className="text-[10px] text-slate-500">Mumbai Rajdhani</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('priya@example.com', 'password123')}
-                className="p-2 text-left rounded-lg bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 transition-colors"
-              >
-                <span className="font-bold text-navy-900 block truncate">Priya (Data/Lang)</span>
-                <span className="text-[10px] text-slate-500">Mumbai Rajdhani</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('rohan@example.com', 'password123')}
-                className="p-2 text-left rounded-lg bg-slate-50 hover:bg-brand-50 border border-slate-200 hover:border-brand-300 transition-colors"
-              >
-                <span className="font-bold text-navy-900 block truncate">Rohan (UPSC)</span>
-                <span className="text-[10px] text-slate-500">Civil Services</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin('admin@vibe.app', 'admin12345')}
-                className="p-2 text-left rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 hover:border-amber-300 transition-colors"
-              >
-                <span className="font-bold text-amber-900 block truncate">Safety Moderator</span>
-                <span className="text-[10px] text-amber-700">Admin Desk</span>
-              </button>
-            </div>
-          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
-          New to VIBE?{' '}
-          <Link href="/signup" className="font-bold text-brand-600 hover:text-brand-700 underline">
-            Create a passenger account
+          Boarding for the first time?{' '}
+          <Link href="/board" className="font-bold text-brand-600 hover:text-brand-700 underline">
+            Scan your boarding QR pass
           </Link>
         </p>
       </div>
