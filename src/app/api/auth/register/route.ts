@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { db, hashPassword } from '@/lib/db';
 import { createSession, toSafeUser } from '@/lib/auth';
+import { getSupabaseAdmin } from '@/lib/supabase/admin';
 import { User } from '@/types';
 
 export async function POST(req: Request) {
@@ -45,9 +47,29 @@ export async function POST(req: Request) {
       finalUsername = db.generateSuggestedUsername(displayName);
     }
 
+    let userId: string = crypto.randomUUID();
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const s = getSupabaseAdmin();
+        const { data: authData, error: authErr } = await s.auth.admin.createUser({
+          email: email.trim().toLowerCase(),
+          password,
+          email_confirm: true,
+          user_metadata: { role: 'passenger' }
+        });
+        if (authData?.user?.id) {
+          userId = authData.user.id;
+        } else if (authErr) {
+          console.warn('Supabase auth create user warning:', authErr.message);
+        }
+      } catch (err) {
+        console.warn('Supabase auth admin error, using generated UUID:', err);
+      }
+    }
+
     const now = new Date().toISOString();
     const newUser: User = {
-      id: `usr_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      id: userId,
       email: email.trim().toLowerCase(),
       username: finalUsername,
       passwordHash: hashPassword(password),

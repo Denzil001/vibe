@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db, hashPassword } from '@/lib/db';
 import { createSession, toSafeUser } from '@/lib/auth';
+import { createClient } from '@supabase/supabase-js';
 
 export async function POST(req: Request) {
   try {
@@ -23,7 +24,21 @@ export async function POST(req: Request) {
     }
 
     const inputHash = hashPassword(password);
-    if (user.passwordHash !== inputHash) {
+    let isValidPassword = user.passwordHash === inputHash;
+
+    if (!isValidPassword && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      try {
+        const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+        const { data: authData } = await client.auth.signInWithPassword({ email, password });
+        if (authData?.user?.id === user.id) {
+          isValidPassword = true;
+        }
+      } catch {
+        // Ignore fallback error
+      }
+    }
+
+    if (!isValidPassword) {
       return NextResponse.json(
         { error: 'Invalid email or password.' },
         { status: 401 }

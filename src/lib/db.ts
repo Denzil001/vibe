@@ -9,7 +9,6 @@ import {
   Message, 
   BlockRecord, 
   Report, 
-  Activity, 
   ActivityAttempt, 
   AchievementBadge,
   ScoreEvent,
@@ -17,6 +16,7 @@ import {
   ReputationAppeal,
   QRToken
 } from '@/types';
+import { getSupabaseAdmin } from './supabase/admin';
 
 interface DatabaseSchema {
   users: User[];
@@ -38,9 +38,13 @@ interface DatabaseSchema {
 const DATA_DIR = path.join(process.cwd(), '.data');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 
-// Ensure data directory exists
+// Ensure data directory exists for local caching
 if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch {
+    // Ignore errors in environments with read-only root
+  }
 }
 
 export const INITIAL_BADGES: AchievementBadge[] = [
@@ -104,7 +108,6 @@ export const INITIAL_BADGES: AchievementBadge[] = [
 
 // Helper to hash password deterministically for dev/test
 export function hashPassword(password: string): string {
-  // Simple PBKDF2/SHA-256 equivalent using Node crypto
   const crypto = require('crypto');
   return crypto.pbkdf2Sync(password, 'vibe_salt_2026', 1000, 32, 'sha256').toString('hex');
 }
@@ -113,7 +116,7 @@ const DEFAULT_PASSWORD_HASH = hashPassword('password123');
 
 function getSeedData(): DatabaseSchema {
   const now = new Date().toISOString();
-  const travelDate = new Date(Date.now() + 86400000).toISOString().split('T')[0]; // Tomorrow
+  const travelDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
   const users: User[] = [
     {
@@ -248,13 +251,13 @@ function getSeedData(): DatabaseSchema {
       id: 'jrn_1',
       userId: 'usr_1',
       trainNumber: '12951',
-      trainName: 'Mumbai Rajdhani Express',
-      travelDate: travelDate,
+      trainName: 'Mumbai Tejas Rajdhani Express',
+      travelDate,
       boardingStation: 'Mumbai Central (MMCT)',
       destinationStation: 'New Delhi (NDLS)',
       durationHours: 15.5,
       discoveryEnabled: true,
-      conversationGoals: ['Tech discussion', 'Casual chess or trivia', 'Knowledge sharing'],
+      conversationGoals: ['Tech discussions', 'System architecture', 'Chess games'],
       status: 'active',
       createdAt: now,
       updatedAt: now,
@@ -263,13 +266,13 @@ function getSeedData(): DatabaseSchema {
       id: 'jrn_2',
       userId: 'usr_2',
       trainNumber: '12951',
-      trainName: 'Mumbai Rajdhani Express',
-      travelDate: travelDate,
+      trainName: 'Mumbai Tejas Rajdhani Express',
+      travelDate,
       boardingStation: 'Surat (ST)',
       destinationStation: 'New Delhi (NDLS)',
       durationHours: 12.0,
       discoveryEnabled: true,
-      conversationGoals: ['Study buddy', 'Language exchange', 'Tech & AI discussions'],
+      conversationGoals: ['AI ethics study', 'Language practice', 'Tech networking'],
       status: 'active',
       createdAt: now,
       updatedAt: now,
@@ -278,13 +281,13 @@ function getSeedData(): DatabaseSchema {
       id: 'jrn_3',
       userId: 'usr_3',
       trainNumber: '12951',
-      trainName: 'Mumbai Rajdhani Express',
-      travelDate: travelDate,
+      trainName: 'Mumbai Tejas Rajdhani Express',
+      travelDate,
       boardingStation: 'Vadodara Jn (BRC)',
       destinationStation: 'Hazrat Nizamuddin (NZM)',
-      durationHours: 11.0,
+      durationHours: 11.5,
       discoveryEnabled: true,
-      conversationGoals: ['Study group', 'Current affairs discussions', 'Book exchange'],
+      conversationGoals: ['History & policy debate', 'Book discussions'],
       status: 'active',
       createdAt: now,
       updatedAt: now,
@@ -293,8 +296,8 @@ function getSeedData(): DatabaseSchema {
       id: 'jrn_4',
       userId: 'usr_4',
       trainNumber: '12951',
-      trainName: 'Mumbai Rajdhani Express',
-      travelDate: travelDate,
+      trainName: 'Mumbai Tejas Rajdhani Express',
+      travelDate,
       boardingStation: 'Mumbai Central (MMCT)',
       destinationStation: 'Kota Jn (KOTA)',
       durationHours: 10.5,
@@ -379,8 +382,8 @@ function getSeedData(): DatabaseSchema {
     { id: 'gm_7', groupId: 'grp_3', userId: 'usr_3', role: 'admin', joinedAt: now },
     { id: 'gm_8', groupId: 'grp_3', userId: 'usr_1', role: 'member', joinedAt: now },
     { id: 'gm_9', groupId: 'grp_4', userId: 'usr_4', role: 'admin', joinedAt: now },
-    { id: 'gm_10', groupId: 'grp_4', userId: 'usr_2', role: 'member', joinedAt: now },
-    { id: 'gm_11', groupId: 'grp_4', userId: 'usr_1', role: 'member', joinedAt: now },
+    { id: 'gm_10', groupId: 'grp_4', userId: 'usr_1', role: 'member', joinedAt: now },
+    { id: 'gm_11', groupId: 'grp_4', userId: 'usr_2', role: 'member', joinedAt: now },
   ];
 
   const conversations: Conversation[] = [
@@ -395,46 +398,35 @@ function getSeedData(): DatabaseSchema {
   ];
 
   const messages: Message[] = [
-    // Group 1 messages
     {
-      id: 'msg_g1_1',
+      id: 'msg_1',
       groupId: 'grp_1',
       senderId: 'usr_1',
       senderName: 'Aarav Sharma',
       senderAvatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80',
-      content: 'Welcome everyone joining on the Mumbai Rajdhani! Charging points in B3 coach are working well. Anyone working on interesting projects today?',
+      content: 'Welcome passengers to the Mumbai Rajdhani Tech Cohort! Anyone else looking into WebAssembly or Edge AI optimizations?',
       createdAt: new Date(Date.now() - 3600000).toISOString(),
     },
     {
-      id: 'msg_g1_2',
+      id: 'msg_2',
       groupId: 'grp_1',
       senderId: 'usr_2',
       senderName: 'Priya Nair',
       senderAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-      content: 'Hey Aarav! Boarding shortly at Surat. I am reviewing research on low-latency language models. Glad to see fellow builders here!',
-      createdAt: new Date(Date.now() - 2400000).toISOString(),
+      content: 'Hey Aarav! Yes, working on lightweight models for low-bandwidth scenarios like train travel. Great to meet you.',
+      createdAt: new Date(Date.now() - 1800000).toISOString(),
     },
     {
-      id: 'msg_g1_3',
-      groupId: 'grp_1',
-      senderId: 'usr_3',
-      senderName: 'Rohan Verma',
-      senderAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-      content: 'Boarding at Vadodara. If anyone wants to take a break later and discuss digital public infrastructure or IRCTC evolution, let me know!',
-      createdAt: new Date(Date.now() - 1200000).toISOString(),
-    },
-    // Direct Conversation 1-to-1
-    {
-      id: 'msg_c1_1',
+      id: 'msg_3',
       conversationId: 'conv_1_2',
       senderId: 'usr_1',
       senderName: 'Aarav Sharma',
       senderAvatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=150&q=80',
-      content: 'Hi Priya! I noticed you are studying ML and also learning web development. I work in full-stack engineering and would love to exchange notes!',
-      createdAt: new Date(Date.now() - 1800000).toISOString(),
+      content: 'Hi Priya, saw you are in Coach B2 as well. Let me know if you want to collaborate on the PyTorch paper discussion later.',
+      createdAt: new Date(Date.now() - 600000).toISOString(),
     },
     {
-      id: 'msg_c1_2',
+      id: 'msg_4',
       conversationId: 'conv_1_2',
       senderId: 'usr_2',
       senderName: 'Priya Nair',
@@ -557,11 +549,276 @@ function getSeedData(): DatabaseSchema {
   };
 }
 
-class Database {
+export class Database {
   private data: DatabaseSchema;
+  private isSupabaseSyncing = false;
 
   constructor() {
     this.data = this.readFromDisk();
+    this.initSupabaseSync();
+  }
+
+  private isSupabaseConfigured(): boolean {
+    return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  }
+
+  private initSupabaseSync(): void {
+    if (this.isSupabaseConfigured() && typeof window === 'undefined') {
+      this.syncFromSupabase().catch(() => {});
+    }
+  }
+
+  public async syncFromSupabase(): Promise<void> {
+    if (!this.isSupabaseConfigured() || this.isSupabaseSyncing) return;
+    this.isSupabaseSyncing = true;
+    try {
+      const s = getSupabaseAdmin();
+      const [
+        profRes,
+        jrnRes,
+        grpRes,
+        gmRes,
+        convRes,
+        msgRes,
+        blkRes,
+        repRes,
+        qrRes,
+        seRes,
+        rstRes,
+        aplRes,
+        attRes,
+        achRes
+      ] = await Promise.all([
+        s.from('profiles').select('*'),
+        s.from('journeys').select('*'),
+        s.from('groups').select('*'),
+        s.from('group_members').select('*'),
+        s.from('conversations').select('*'),
+        s.from('messages').select('*'),
+        s.from('blocks').select('*'),
+        s.from('reports').select('*'),
+        s.from('qr_tokens').select('*'),
+        s.from('score_events').select('*'),
+        s.from('restrictions').select('*'),
+        s.from('appeals').select('*'),
+        s.from('activity_attempts').select('*'),
+        s.from('user_achievements').select('*'),
+      ]);
+
+      if (profRes.data && profRes.data.length > 0) {
+        this.data.users = profRes.data.map(p => ({
+          id: p.id,
+          email: p.email,
+          username: p.username,
+          usernameUpdatedAt: p.username_updated_at || undefined,
+          passwordHash: p.password_hash || DEFAULT_PASSWORD_HASH,
+          displayName: p.display_name,
+          avatarUrl: p.avatar_url || '',
+          bio: p.bio || '',
+          interests: p.interests || [],
+          skillsToShare: p.skills_to_share || [],
+          skillsToLearn: p.skills_to_learn || [],
+          learningGoals: p.learning_goals || [],
+          conversationTopics: p.conversation_topics || [],
+          languages: p.languages || [],
+          discoveryOptIn: p.discovery_opt_in ?? true,
+          profileVisibility: p.profile_visibility || 'journey_only',
+          role: p.role || 'passenger',
+          points: p.points ?? 50,
+          baseScore: p.base_score ?? 100,
+          reputationScore: p.reputation_score ?? 100,
+          isRestricted: p.is_restricted ?? false,
+          restrictionExpiresAt: p.restriction_expires_at || undefined,
+          restrictionReason: p.restriction_reason || undefined,
+          badges: p.badges || [],
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+        }));
+      }
+
+      if (jrnRes.data) {
+        this.data.journeys = jrnRes.data.map(j => ({
+          id: j.id,
+          userId: j.user_id,
+          trainNumber: j.train_number,
+          trainName: j.train_name,
+          travelDate: j.travel_date,
+          boardingStation: j.boarding_station,
+          destinationStation: j.destination_station,
+          durationHours: j.duration_hours ? Number(j.duration_hours) : undefined,
+          discoveryEnabled: j.discovery_enabled ?? true,
+          conversationGoals: j.conversation_goals || [],
+          status: j.status || 'upcoming',
+          createdAt: j.created_at,
+          updatedAt: j.updated_at,
+        }));
+      }
+
+      if (grpRes.data) {
+        this.data.groups = grpRes.data.map(g => ({
+          id: g.id,
+          name: g.name,
+          description: g.description,
+          trainNumber: g.train_number || undefined,
+          category: g.category,
+          rules: g.rules || [],
+          createdBy: g.created_by,
+          memberCount: g.member_count ?? 1,
+          createdAt: g.created_at,
+        }));
+      }
+
+      if (gmRes.data) {
+        this.data.groupMembers = gmRes.data.map(m => ({
+          id: m.id,
+          groupId: m.group_id,
+          userId: m.user_id,
+          role: m.role || 'member',
+          joinedAt: m.joined_at,
+        }));
+      }
+
+      if (convRes.data) {
+        this.data.conversations = convRes.data.map(c => ({
+          id: c.id,
+          participantIds: c.participant_ids as [string, string],
+          lastMessage: c.last_message || undefined,
+          lastMessageAt: c.last_message_at || undefined,
+          createdAt: c.created_at,
+          updatedAt: c.updated_at,
+        }));
+      }
+
+      if (msgRes.data) {
+        this.data.messages = msgRes.data.map(m => ({
+          id: m.id,
+          conversationId: m.conversation_id || null,
+          groupId: m.group_id || null,
+          senderId: m.sender_id,
+          senderName: m.sender_name,
+          senderAvatar: m.sender_avatar || '',
+          content: m.content,
+          createdAt: m.created_at,
+        }));
+      }
+
+      if (blkRes.data) {
+        this.data.blocks = blkRes.data.map(b => ({
+          id: b.id,
+          blockerId: b.blocker_id,
+          blockedId: b.blocked_id,
+          createdAt: b.created_at,
+        }));
+      }
+
+      if (repRes.data) {
+        this.data.reports = repRes.data.map(r => ({
+          id: r.id,
+          reporterId: r.reporter_id,
+          reportedUserId: r.reported_user_id || null,
+          reportedGroupId: r.reported_group_id || null,
+          reportedMessageId: r.reported_message_id || null,
+          category: r.category as any,
+          reason: r.reason,
+          status: r.status as any,
+          notes: r.notes || undefined,
+          moderatorId: r.moderator_id || null,
+          resolutionAction: r.resolution_action as any,
+          resolvedAt: r.resolved_at || null,
+          createdAt: r.created_at,
+        }));
+      }
+
+      if (qrRes.data) {
+        this.data.qrTokens = qrRes.data.map(q => ({
+          id: q.id,
+          token: q.token,
+          type: q.type as any,
+          targetId: q.target_id || undefined,
+          label: q.label || undefined,
+          expiresAt: q.expires_at,
+          isRevoked: q.is_revoked ?? false,
+          maxUses: q.max_uses || undefined,
+          usedCount: q.used_count ?? 0,
+          createdBy: q.created_by || undefined,
+          createdAt: q.created_at,
+        }));
+      }
+
+      if (seRes.data) {
+        this.data.scoreEvents = seRes.data.map(e => ({
+          id: e.id,
+          journeyId: e.journey_id,
+          voterUserId: e.voter_user_id,
+          targetUserId: e.target_user_id,
+          voteType: e.vote_type as any,
+          pointDelta: e.point_delta,
+          reasonCategory: e.reason_category || undefined,
+          status: e.status as any,
+          reversalReason: e.reversal_reason || undefined,
+          reversalBy: e.reversal_by || undefined,
+          reversedBy: e.reversed_by || undefined,
+          reversedAt: e.reversed_at || undefined,
+          createdAt: e.created_at,
+        }));
+      }
+
+      if (rstRes.data) {
+        this.data.restrictions = rstRes.data.map(r => ({
+          id: r.id,
+          userId: r.user_id,
+          triggerScore: r.trigger_score,
+          startedAt: r.started_at,
+          expiresAt: r.expires_at,
+          reason: r.reason,
+          policyVersion: r.policy_version,
+          status: r.status as any,
+          appealId: r.appeal_id || undefined,
+        }));
+      }
+
+      if (aplRes.data) {
+        this.data.appeals = aplRes.data.map(a => ({
+          id: a.id,
+          userId: a.user_id,
+          username: a.username || undefined,
+          restrictionId: a.restriction_id || undefined,
+          scoreEventId: a.score_event_id || undefined,
+          userExplanation: a.user_explanation,
+          status: a.status as any,
+          decisionNotes: a.decision_notes || undefined,
+          moderatorId: a.moderator_id || undefined,
+          createdAt: a.created_at,
+          resolvedAt: a.resolved_at || undefined,
+        }));
+      }
+
+      if (attRes.data) {
+        this.data.activityAttempts = attRes.data.map(a => ({
+          id: a.id,
+          userId: a.user_id,
+          activityId: a.activity_id,
+          score: a.score,
+          maxScore: a.max_score,
+          pointsEarned: a.points_earned,
+          completedAt: a.completed_at,
+        }));
+      }
+
+      if (achRes.data) {
+        this.data.userAchievements = achRes.data.map(a => ({
+          userId: a.user_id,
+          badgeKey: a.badge_key,
+          earnedAt: a.earned_at,
+        }));
+      }
+
+      this.writeToDisk(this.data);
+    } catch (e) {
+      // Background sync error
+    } finally {
+      this.isSupabaseSyncing = false;
+    }
   }
 
   private readFromDisk(): DatabaseSchema {
@@ -569,73 +826,16 @@ class Database {
       if (fs.existsSync(DB_PATH)) {
         const fileContent = fs.readFileSync(DB_PATH, 'utf-8');
         const parsed: DatabaseSchema = JSON.parse(fileContent);
-        let modified = false;
-        if (!parsed.scoreEvents) { parsed.scoreEvents = []; modified = true; }
-        if (!parsed.restrictions) { parsed.restrictions = []; modified = true; }
-        if (!parsed.appeals) { parsed.appeals = []; modified = true; }
-        if (!parsed.qrTokens || parsed.qrTokens.length === 0) {
-          parsed.qrTokens = [
-            {
-              id: 'qrt_public_1',
-              token: 'vibe_onboard_public_welcome',
-              type: 'public_entry',
-              label: 'VIBE Community General Onboarding',
-              expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
-              isRevoked: false,
-              maxUses: 10000,
-              usedCount: 42,
-              createdBy: 'usr_admin',
-              createdAt: new Date().toISOString(),
-            },
-            {
-              id: 'qrt_journey_12951',
-              token: 'vibe_jrn_12951_rajdhani',
-              type: 'journey_join',
-              targetId: 'jrn_1',
-              label: 'Mumbai Rajdhani (12951) Passenger Coach B4',
-              expiresAt: new Date(Date.now() + 7 * 86400000).toISOString(),
-              isRevoked: false,
-              maxUses: 500,
-              usedCount: 18,
-              createdBy: 'usr_1',
-              createdAt: new Date().toISOString(),
-            },
-            {
-              id: 'qrt_group_grp1',
-              token: 'vibe_grp_tech_startups',
-              type: 'group_join',
-              targetId: 'grp_1',
-              label: 'Tech & Startups Cohort (12951)',
-              expiresAt: new Date(Date.now() + 14 * 86400000).toISOString(),
-              isRevoked: false,
-              maxUses: 200,
-              usedCount: 12,
-              createdBy: 'usr_1',
-              createdAt: new Date().toISOString(),
-            },
-          ];
-          modified = true;
-        }
-        for (const u of parsed.users) {
-          if (!u.username) {
-            u.username = u.email ? u.email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') : `user_${u.id.slice(0, 6)}`;
-            modified = true;
-          }
-          if (u.baseScore === undefined) { u.baseScore = 100; modified = true; }
-          if (u.reputationScore === undefined) { u.reputationScore = 100; modified = true; }
-          if (u.isRestricted === undefined) { u.isRestricted = false; modified = true; }
-        }
-        if (modified) {
-          this.writeToDisk(parsed);
-        }
+        if (!parsed.scoreEvents) parsed.scoreEvents = [];
+        if (!parsed.restrictions) parsed.restrictions = [];
+        if (!parsed.appeals) parsed.appeals = [];
+        if (!parsed.qrTokens) parsed.qrTokens = [];
         return parsed;
       }
-    } catch (e) {
-      console.error('Failed to read db.json, generating seed data', e);
+    } catch {
+      // Fallback
     }
-    const seed = getSeedData();
-    this.writeToDisk(seed);
-    return seed;
+    return getSeedData();
   }
 
   private writeToDisk(data: DatabaseSchema): void {
@@ -643,13 +843,23 @@ class Database {
       const tempPath = `${DB_PATH}.tmp`;
       fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
       fs.renameSync(tempPath, DB_PATH);
-    } catch (e) {
-      console.error('Failed to write db.json', e);
+    } catch {
+      // Ignore write failures in read-only / test environments
     }
   }
 
   private save(): void {
     this.writeToDisk(this.data);
+  }
+
+  private async asyncSupabaseWrite(action: (s: ReturnType<typeof getSupabaseAdmin>) => Promise<any>): Promise<void> {
+    if (!this.isSupabaseConfigured() || typeof window !== 'undefined') return;
+    try {
+      const s = getSupabaseAdmin();
+      await action(s);
+    } catch {
+      // Safe background persistence
+    }
   }
 
   // Users
@@ -668,6 +878,33 @@ class Database {
   createUser(user: User): User {
     this.data.users.push(user);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('profiles').upsert({
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        password_hash: user.passwordHash,
+        display_name: user.displayName,
+        avatar_url: user.avatarUrl,
+        bio: user.bio,
+        interests: user.interests,
+        skills_to_share: user.skillsToShare,
+        skills_to_learn: user.skillsToLearn,
+        learning_goals: user.learningGoals,
+        conversation_topics: user.conversationTopics,
+        languages: user.languages,
+        discovery_opt_in: user.discoveryOptIn,
+        profile_visibility: user.profileVisibility,
+        role: user.role,
+        points: user.points,
+        base_score: user.baseScore,
+        reputation_score: user.reputationScore,
+        is_restricted: user.isRestricted,
+        badges: user.badges,
+      });
+    });
+
     return user;
   }
 
@@ -679,8 +916,34 @@ class Database {
       ...updates, 
       updatedAt: new Date().toISOString() 
     };
+    const updated = this.data.users[idx];
     this.save();
-    return this.data.users[idx];
+
+    this.asyncSupabaseWrite(async (s) => {
+      const payload: any = { updated_at: updated.updatedAt };
+      if (updates.displayName !== undefined) payload.display_name = updates.displayName;
+      if (updates.avatarUrl !== undefined) payload.avatar_url = updates.avatarUrl;
+      if (updates.bio !== undefined) payload.bio = updates.bio;
+      if (updates.interests !== undefined) payload.interests = updates.interests;
+      if (updates.skillsToShare !== undefined) payload.skills_to_share = updates.skillsToShare;
+      if (updates.skillsToLearn !== undefined) payload.skills_to_learn = updates.skillsToLearn;
+      if (updates.learningGoals !== undefined) payload.learning_goals = updates.learningGoals;
+      if (updates.conversationTopics !== undefined) payload.conversation_topics = updates.conversationTopics;
+      if (updates.languages !== undefined) payload.languages = updates.languages;
+      if (updates.discoveryOptIn !== undefined) payload.discovery_opt_in = updates.discoveryOptIn;
+      if (updates.profileVisibility !== undefined) payload.profile_visibility = updates.profileVisibility;
+      if (updates.role !== undefined) payload.role = updates.role;
+      if (updates.points !== undefined) payload.points = updates.points;
+      if (updates.reputationScore !== undefined) payload.reputation_score = updates.reputationScore;
+      if (updates.isRestricted !== undefined) payload.is_restricted = updates.isRestricted;
+      if (updates.restrictionExpiresAt !== undefined) payload.restriction_expires_at = updates.restrictionExpiresAt;
+      if (updates.restrictionReason !== undefined) payload.restriction_reason = updates.restrictionReason;
+      if (updates.badges !== undefined) payload.badges = updates.badges;
+      if (updates.passwordHash !== undefined) payload.password_hash = updates.passwordHash;
+      await s.from('profiles').update(payload).eq('id', id);
+    });
+
+    return updated;
   }
 
   // Username validation & uniqueness
@@ -737,6 +1000,15 @@ class Database {
     user.usernameUpdatedAt = new Date().toISOString();
     user.updatedAt = new Date().toISOString();
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('profiles').update({
+        username: user.username,
+        username_updated_at: user.usernameUpdatedAt,
+        updated_at: user.updatedAt,
+      }).eq('id', userId);
+    });
+
     return { success: true, user };
   }
 
@@ -759,6 +1031,11 @@ class Database {
     this.data.groupMembers = this.data.groupMembers.filter(gm => gm.userId !== id);
     this.data.blocks = this.data.blocks.filter(b => b.blockerId !== id && b.blockedId !== id);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('profiles').delete().eq('id', id);
+    });
+
     return this.data.users.length < initialLen;
   }
 
@@ -791,6 +1068,23 @@ class Database {
       this.data.journeys.push(journey);
     }
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('journeys').upsert({
+        id: journey.id,
+        user_id: journey.userId,
+        train_number: journey.trainNumber,
+        train_name: journey.trainName,
+        travel_date: journey.travelDate,
+        boarding_station: journey.boardingStation,
+        destination_station: journey.destinationStation,
+        duration_hours: journey.durationHours,
+        discovery_enabled: journey.discoveryEnabled,
+        conversation_goals: journey.conversationGoals,
+        status: journey.status,
+      });
+    });
+
     return journey;
   }
 
@@ -798,6 +1092,11 @@ class Database {
     const len = this.data.journeys.length;
     this.data.journeys = this.data.journeys.filter(j => j.id !== id);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('journeys').delete().eq('id', id);
+    });
+
     return this.data.journeys.length < len;
   }
 
@@ -812,14 +1111,35 @@ class Database {
 
   createGroup(group: Group): Group {
     this.data.groups.push(group);
+    const memberId = `gm_${Date.now()}`;
     this.data.groupMembers.push({
-      id: `gm_${Date.now()}`,
+      id: memberId,
       groupId: group.id,
       userId: group.createdBy,
       role: 'admin',
       joinedAt: new Date().toISOString(),
     });
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('groups').insert({
+        id: group.id,
+        name: group.name,
+        description: group.description,
+        train_number: group.trainNumber,
+        category: group.category,
+        rules: group.rules,
+        created_by: group.createdBy,
+        member_count: group.memberCount,
+      });
+      await s.from('group_members').insert({
+        id: memberId,
+        group_id: group.id,
+        user_id: group.createdBy,
+        role: 'admin',
+      });
+    });
+
     return group;
   }
 
@@ -836,8 +1156,9 @@ class Database {
     const group = this.getGroupById(groupId);
     if (!group) return false;
 
+    const gmId = `gm_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     this.data.groupMembers.push({
-      id: `gm_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+      id: gmId,
       groupId,
       userId,
       role: 'member',
@@ -845,6 +1166,17 @@ class Database {
     });
     group.memberCount += 1;
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('group_members').insert({
+        id: gmId,
+        group_id: groupId,
+        user_id: userId,
+        role: 'member',
+      });
+      await s.from('groups').update({ member_count: group.memberCount }).eq('id', groupId);
+    });
+
     return true;
   }
 
@@ -863,6 +1195,12 @@ class Database {
     if (this.data.groupMembers.length < initialLen) {
       group.memberCount = Math.max(0, group.memberCount - 1);
       this.save();
+
+      this.asyncSupabaseWrite(async (s) => {
+        await s.from('group_members').delete().eq('group_id', groupId).eq('user_id', userId);
+        await s.from('groups').update({ member_count: group.memberCount }).eq('id', groupId);
+      });
+
       return true;
     }
     return false;
@@ -892,6 +1230,16 @@ class Database {
     };
     this.data.conversations.push(newConv);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('conversations').insert({
+        id: newConv.id,
+        participant_ids: newConv.participantIds,
+        created_at: newConv.createdAt,
+        updated_at: newConv.updatedAt,
+      });
+    });
+
     return newConv;
   }
 
@@ -922,6 +1270,27 @@ class Database {
       }
     }
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('messages').insert({
+        id: msg.id,
+        conversation_id: msg.conversationId || null,
+        group_id: msg.groupId || null,
+        sender_id: msg.senderId,
+        sender_name: msg.senderName,
+        sender_avatar: msg.senderAvatar,
+        content: msg.content,
+        created_at: msg.createdAt,
+      });
+      if (msg.conversationId) {
+        await s.from('conversations').update({
+          last_message: msg.content,
+          last_message_at: msg.createdAt,
+          updated_at: msg.createdAt,
+        }).eq('id', msg.conversationId);
+      }
+    });
+
     return msg;
   }
 
@@ -948,6 +1317,16 @@ class Database {
     };
     this.data.blocks.push(record);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('blocks').insert({
+        id: record.id,
+        blocker_id: record.blockerId,
+        blocked_id: record.blockedId,
+        created_at: record.createdAt,
+      });
+    });
+
     return record;
   }
 
@@ -955,6 +1334,11 @@ class Database {
     const len = this.data.blocks.length;
     this.data.blocks = this.data.blocks.filter(b => !(b.blockerId === blockerId && b.blockedId === blockedId));
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('blocks').delete().eq('blocker_id', blockerId).eq('blocked_id', blockedId);
+    });
+
     return this.data.blocks.length < len;
   }
 
@@ -970,6 +1354,25 @@ class Database {
   createReport(report: Report): Report {
     this.data.reports.push(report);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('reports').insert({
+        id: report.id,
+        reporter_id: report.reporterId,
+        reported_user_id: report.reportedUserId || null,
+        reported_group_id: report.reportedGroupId || null,
+        reported_message_id: report.reportedMessageId || null,
+        category: report.category,
+        reason: report.reason,
+        status: report.status,
+        notes: report.notes || null,
+        moderator_id: report.moderatorId || null,
+        resolution_action: report.resolutionAction || null,
+        resolved_at: report.resolvedAt || null,
+        created_at: report.createdAt,
+      });
+    });
+
     return report;
   }
 
@@ -977,8 +1380,20 @@ class Database {
     const idx = this.data.reports.findIndex(r => r.id === id);
     if (idx === -1) return undefined;
     this.data.reports[idx] = { ...this.data.reports[idx], ...updates };
+    const updated = this.data.reports[idx];
     this.save();
-    return this.data.reports[idx];
+
+    this.asyncSupabaseWrite(async (s) => {
+      const payload: any = {};
+      if (updates.status !== undefined) payload.status = updates.status;
+      if (updates.notes !== undefined) payload.notes = updates.notes;
+      if (updates.moderatorId !== undefined) payload.moderator_id = updates.moderatorId;
+      if (updates.resolutionAction !== undefined) payload.resolution_action = updates.resolutionAction;
+      if (updates.resolvedAt !== undefined) payload.resolved_at = updates.resolvedAt;
+      await s.from('reports').update(payload).eq('id', id);
+    });
+
+    return updated;
   }
 
   // Activity Attempts & Badges
@@ -989,6 +1404,21 @@ class Database {
       user.points = (user.points || 0) + attempt.pointsEarned;
     }
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('activity_attempts').insert({
+        id: attempt.id,
+        user_id: attempt.userId,
+        activity_id: attempt.activityId,
+        score: attempt.score,
+        max_score: attempt.maxScore,
+        points_earned: attempt.pointsEarned,
+        completed_at: attempt.completedAt,
+      });
+      if (user) {
+        await s.from('profiles').update({ points: user.points }).eq('id', user.id);
+      }
+    });
   }
 
   getUserAchievements(userId: string): string[] {
@@ -1008,8 +1438,20 @@ class Database {
         badgeKey,
         earnedAt: new Date().toISOString(),
       });
-      user.points = (user.points || 0) + 50; // Award 50 bonus points for badge
+      user.points = (user.points || 0) + 50;
       this.save();
+
+      this.asyncSupabaseWrite(async (s) => {
+        await s.from('user_achievements').insert({
+          user_id: userId,
+          badge_key: badgeKey,
+        });
+        await s.from('profiles').update({
+          badges: user.badges,
+          points: user.points,
+        }).eq('id', userId);
+      });
+
       return true;
     }
     return false;
@@ -1052,6 +1494,22 @@ class Database {
 
     this.data.qrTokens.push(record);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('qr_tokens').insert({
+        id: record.id,
+        token: record.token,
+        type: record.type,
+        target_id: record.targetId || null,
+        label: record.label,
+        expires_at: record.expiresAt,
+        is_revoked: record.isRevoked,
+        max_uses: record.maxUses,
+        used_count: record.usedCount,
+        created_by: record.createdBy || null,
+      });
+    });
+
     return record;
   }
 
@@ -1089,6 +1547,11 @@ class Database {
     if (!token) return false;
     token.usedCount = (token.usedCount || 0) + 1;
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('qr_tokens').update({ used_count: token.usedCount }).eq('token', token.token);
+    });
+
     return true;
   }
 
@@ -1098,6 +1561,11 @@ class Database {
     if (!token) return false;
     token.isRevoked = true;
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('qr_tokens').update({ is_revoked: true }).eq('id', tokenId);
+    });
+
     return true;
   }
 
@@ -1198,14 +1666,16 @@ class Database {
 
     // Check if score strictly drops below 90
     let isRestricted = target.isRestricted;
+    let restrictionRecord: RestrictionRecord | undefined;
+
     if (computedScore < 90 && !target.isRestricted) {
-      const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+      const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       target.isRestricted = true;
       target.restrictionExpiresAt = expiry;
       target.restrictionReason = 'Reputation score fell below 90 points based on contextual journey interactions.';
       isRestricted = true;
 
-      const restrictionRecord: RestrictionRecord = {
+      restrictionRecord = {
         id: `rst_${Date.now()}_${Math.random().toString(36).substring(7)}`,
         userId: targetUserId,
         triggerScore: computedScore,
@@ -1219,6 +1689,40 @@ class Database {
     }
 
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('score_events').insert({
+        id: event.id,
+        journey_id: event.journeyId,
+        voter_user_id: event.voterUserId,
+        target_user_id: event.targetUserId,
+        vote_type: event.voteType,
+        point_delta: event.pointDelta,
+        reason_category: event.reasonCategory,
+        status: event.status,
+      });
+      await s.from('profiles').update({
+        reputation_score: target.reputationScore,
+        is_restricted: target.isRestricted,
+        restriction_expires_at: target.restrictionExpiresAt,
+        restriction_reason: target.restrictionReason,
+        updated_at: target.updatedAt,
+      }).eq('id', targetUserId);
+
+      if (restrictionRecord) {
+        await s.from('restrictions').insert({
+          id: restrictionRecord.id,
+          user_id: restrictionRecord.userId,
+          trigger_score: restrictionRecord.triggerScore,
+          started_at: restrictionRecord.startedAt,
+          expires_at: restrictionRecord.expiresAt,
+          reason: restrictionRecord.reason,
+          policy_version: restrictionRecord.policyVersion,
+          status: restrictionRecord.status,
+        });
+      }
+    });
+
     return { success: true, event, newScore: computedScore, isRestricted };
   }
 
@@ -1237,7 +1741,7 @@ class Database {
         status: e.status,
         reversalReason: e.reversalReason,
         createdAt: e.createdAt,
-      })); // Voter identity is hidden for privacy!
+      }));
 
     return {
       baseScore: user?.baseScore ?? 100,
@@ -1269,13 +1773,11 @@ class Database {
       target.reputationScore = computedScore;
       target.updatedAt = now;
 
-      // If score is now >= 90, lift restriction if it was caused by this score
       if (computedScore >= 90 && target.isRestricted) {
         target.isRestricted = false;
         target.restrictionExpiresAt = undefined;
         target.restrictionReason = undefined;
 
-        // update active restriction record
         const activeRest = this.data.restrictions.find(r => r.userId === target.id && r.status === 'active');
         if (activeRest) {
           activeRest.status = 'lifted';
@@ -1284,6 +1786,26 @@ class Database {
     }
 
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('score_events').update({
+        status: 'reversed',
+        reversal_reason: reason,
+        reversed_by: moderatorId,
+        reversed_at: now,
+      }).eq('id', eventId);
+
+      if (target) {
+        await s.from('profiles').update({
+          reputation_score: target.reputationScore,
+          is_restricted: target.isRestricted,
+          restriction_expires_at: target.restrictionExpiresAt,
+          restriction_reason: target.restrictionReason,
+          updated_at: target.updatedAt,
+        }).eq('id', target.id);
+      }
+    });
+
     return { success: true, newScore: computedScore };
   }
 
@@ -1302,6 +1824,16 @@ class Database {
             user.restrictionReason = undefined;
           }
         }
+        this.asyncSupabaseWrite(async (s) => {
+          await s.from('restrictions').update({ status: 'expired' }).eq('id', r.id);
+          if (user) {
+            await s.from('profiles').update({
+              is_restricted: user.isRestricted,
+              restriction_expires_at: user.restrictionExpiresAt,
+              restriction_reason: user.restrictionReason,
+            }).eq('id', user.id);
+          }
+        });
       }
     }
   }
@@ -1321,6 +1853,19 @@ class Database {
     };
     this.data.appeals.push(appeal);
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('appeals').insert({
+        id: appeal.id,
+        user_id: appeal.userId,
+        username: appeal.username,
+        restriction_id: appeal.restrictionId || null,
+        score_event_id: appeal.scoreEventId || null,
+        user_explanation: appeal.userExplanation,
+        status: appeal.status,
+      });
+    });
+
     return appeal;
   }
 
@@ -1357,6 +1902,16 @@ class Database {
     }
 
     this.save();
+
+    this.asyncSupabaseWrite(async (s) => {
+      await s.from('appeals').update({
+        status: decision,
+        decision_notes: notes,
+        moderator_id: moderatorId,
+        resolved_at: now,
+      }).eq('id', appealId);
+    });
+
     return { success: true };
   }
 }
